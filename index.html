@@ -59,6 +59,41 @@
   .config-note code { background: #F1EFEA; padding: 2px 6px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
   .empty-state { min-height: 300px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }
   .footer-note { font-size: 9.5px; color: var(--muted); margin-top: 18px; text-align: right; letter-spacing: 0.06em; }
+
+  .urgency-value.clickable { cursor: pointer; transition: opacity 0.15s ease; }
+  .urgency-value.clickable:hover { opacity: 0.65; text-decoration: underline; text-underline-offset: 4px; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0; background: rgba(28,27,26,0.45);
+    z-index: 50; align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 8px; max-width: 620px; width: 100%;
+    max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(28,27,26,0.25);
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 22px; border-bottom: 1px solid var(--line);
+  }
+  .modal-title { font-size: 17px; font-weight: 700; margin: 0; }
+  .modal-close {
+    border: none; background: none; font-size: 20px; line-height: 1; cursor: pointer;
+    color: var(--muted); padding: 4px 8px; border-radius: 4px;
+  }
+  .modal-close:hover { background: var(--gray-soft); color: var(--ink); }
+  .modal-body { overflow-y: auto; padding: 0; }
+
+  .status-viz-row { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .donut-wrap { position: relative; flex-shrink: 0; }
+  .donut-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; pointer-events: none;
+  }
+  .donut-center .num { font-size: 22px; font-weight: 700; line-height: 1; }
+  .donut-center .cap { font-size: 9px; color: var(--muted); letter-spacing: 0.06em; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -71,6 +106,16 @@
     <h1 class="sig-display" style="margin:0; font-size:20px; font-weight:600;">Task Monitoring Dashboard</h1>
   </div>
   <div id="app"></div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title sig-display" id="modalTitle">Tasks</h3>
+      <button class="modal-close" id="modalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
 </div>
 
 <script>
@@ -92,11 +137,11 @@ const DASHBOARD_TITLE = "Team Task Monitor";
 const BUCKET_META = {
   done:         { label: "Done",         color: "var(--accent)", soft: "var(--accent-soft)" },
   in_progress:  { label: "In Progress",  color: "var(--amber)",  soft: "var(--amber-soft)" },
-  blocked:      { label: "Blocked",      color: "var(--rust)",   soft: "var(--rust-soft)" },
+  canceled:     { label: "Canceled",     color: "var(--rust)",   soft: "var(--rust-soft)" },
   not_started:  { label: "Not Started",  color: "var(--gray)",   soft: "var(--gray-soft)" },
   other:        { label: "Other",        color: "var(--muted)",  soft: "#EDEBE6" },
 };
-const BUCKET_ORDER = ["done", "in_progress", "blocked", "not_started", "other"];
+const BUCKET_ORDER = ["done", "in_progress", "canceled", "not_started", "other"];
 
 let boardData = null;
 let sortConfig = { key: "due", dir: "asc" };
@@ -125,7 +170,7 @@ function statusBucket(raw) {
   const s = (raw || "").toLowerCase().trim();
   if (/done|complete|finished|closed/.test(s)) return "done";
   if (/progress|ongoing|doing|active/.test(s)) return "in_progress";
-  if (/block|stuck|hold|delay/.test(s)) return "blocked";
+  if (/cancel|block|stuck|hold|delay/.test(s)) return "canceled";
   if (/not started|todo|to do|pending|backlog|new/.test(s)) return "not_started";
   return "other";
 }
@@ -175,9 +220,11 @@ function buildBoard(fields, rows) {
       const bucket = statusBucket(rawStatus);
       const due = parseDate(r[fieldMap.due]);
       const isDone = bucket === "done";
-      const overdue = !isDone && due && due < today;
-      const dueThisWeek = !isDone && due && due >= today && due <= weekOut;
-      const dueLater = !isDone && due && due > weekOut;
+      const isCanceled = bucket === "canceled";
+      const excludeFromUrgency = isDone || isCanceled;
+      const overdue = !excludeFromUrgency && due && due < today;
+      const dueThisWeek = !excludeFromUrgency && due && due >= today && due <= weekOut;
+      const dueLater = !excludeFromUrgency && due && due > weekOut;
       return { id: i, person, task, rawStatus: rawStatus || "—", bucket, due, overdue, dueThisWeek, dueLater };
     });
 
@@ -194,7 +241,7 @@ function buildBoard(fields, rows) {
   const byPerson = {};
   taskRows.forEach(r => {
     if (!byPerson[r.person]) {
-      byPerson[r.person] = { person: r.person, done:0, in_progress:0, blocked:0, not_started:0, other:0, overdueCount:0, total:0 };
+      byPerson[r.person] = { person: r.person, done:0, in_progress:0, canceled:0, not_started:0, other:0, overdueCount:0, total:0 };
     }
     byPerson[r.person][r.bucket] += 1;
     byPerson[r.person].total += 1;
@@ -202,10 +249,14 @@ function buildBoard(fields, rows) {
   });
   const personStats = Object.values(byPerson).sort((a,b) => b.overdueCount - a.overdueCount || b.total - a.total);
 
+  const overdueRows = taskRows.filter(r => r.overdue);
+  const dueThisWeekRows = taskRows.filter(r => r.dueThisWeek);
+  const dueLaterRows = taskRows.filter(r => r.dueLater);
+
   const urgency = [
-    { key: "overdue", label: "Overdue", count: overdueCount, color: "var(--rust)" },
-    { key: "this_week", label: "Due this week", count: dueThisWeekCount, color: "var(--amber)" },
-    { key: "later", label: "Due later", count: taskRows.filter(r => r.dueLater).length, color: "var(--gray)" },
+    { key: "overdue", label: "Overdue", count: overdueCount, color: "var(--rust)", rows: overdueRows },
+    { key: "this_week", label: "Due this week", count: dueThisWeekCount, color: "var(--amber)", rows: dueThisWeekRows },
+    { key: "later", label: "Due later", count: dueLaterRows.length, color: "var(--gray)", rows: dueLaterRows },
   ];
 
   return { rows: taskRows, total, doneCount, overdueCount, dueThisWeekCount, percentComplete, statusCounts, personStats, urgency };
@@ -253,6 +304,39 @@ function renderTableBody() {
   }).join("");
 }
 
+function buildDonutSvg(statusCounts, total, percentComplete) {
+  const size = 148;
+  const cx = size / 2, cy = size / 2;
+  const r = 56;
+  const strokeWidth = 22;
+  const circumference = 2 * Math.PI * r;
+  let cumulative = 0;
+  const segs = statusCounts.map(s => {
+    const frac = s.count / total;
+    const dash = frac * circumference;
+    const gap = circumference - dash;
+    const rotation = (cumulative / circumference) * 360 - 90;
+    cumulative += dash;
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${BUCKET_META[s.bucket].color}"
+      stroke-width="${strokeWidth}" stroke-dasharray="${dash} ${gap}"
+      transform="rotate(${rotation} ${cx} ${cy})" stroke-linecap="butt">
+      <title>${BUCKET_META[s.bucket].label}: ${s.count}</title>
+    </circle>`;
+  }).join("");
+  return `
+    <div class="donut-wrap">
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(0deg);">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--gray-soft)" stroke-width="${strokeWidth}" />
+        ${segs}
+      </svg>
+      <div class="donut-center">
+        <div class="num sig-display">${percentComplete}%</div>
+        <div class="cap sig-mono">COMPLETE</div>
+      </div>
+    </div>
+  `;
+}
+
 function sortArrow(key) {
   if (sortConfig.key !== key) return "";
   return sortConfig.dir === "asc" ? " &uarr;" : " &darr;";
@@ -277,7 +361,7 @@ function renderDashboard() {
 
   const urgencyHtml = b.urgency.map(u =>
     `<div class="urgency-cell" style="border-left:3px solid ${u.color};">
-      <div class="urgency-value sig-display" style="color:${u.color};">${u.count}</div>
+      <div class="urgency-value clickable sig-display" style="color:${u.color};" data-urgency-key="${u.key}">${u.count}</div>
       <div class="urgency-label sig-mono">${u.label.toUpperCase()}</div>
     </div>`
   ).join("");
@@ -309,8 +393,13 @@ function renderDashboard() {
 
       <div style="margin-bottom:26px;">
         <div class="section-label sig-mono">STATUS BREAKDOWN</div>
-        <div class="status-bar">${statusBarHtml}</div>
-        <div class="legend">${legendHtml}</div>
+        <div class="status-viz-row">
+          ${buildDonutSvg(b.statusCounts, b.total, b.percentComplete)}
+          <div style="flex:1; min-width:200px;">
+            <div class="status-bar">${statusBarHtml}</div>
+            <div class="legend">${legendHtml}</div>
+          </div>
+        </div>
       </div>
 
       <div class="urgency-row">${urgencyHtml}</div>
@@ -365,6 +454,55 @@ function renderDashboard() {
     statusFilter = e.target.value;
     renderTableBody();
   });
+  document.querySelectorAll("[data-urgency-key]").forEach(el => {
+    el.addEventListener("click", () => openUrgencyModal(el.getAttribute("data-urgency-key")));
+  });
+}
+
+function openUrgencyModal(key) {
+  if (!boardData) return;
+  const bucket = boardData.urgency.find(u => u.key === key);
+  if (!bucket) return;
+  document.getElementById("modalTitle").textContent = `${bucket.label} (${bucket.count})`;
+  const body = document.getElementById("modalBody");
+  if (bucket.rows.length === 0) {
+    body.innerHTML = `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13px;">No tasks in this group.</div>`;
+  } else {
+    const sorted = [...bucket.rows].sort((a, b) => {
+      const av = a.due ? a.due.getTime() : Infinity;
+      const bv = b.due ? b.due.getTime() : Infinity;
+      return av - bv;
+    });
+    body.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th class="sig-mono">PERSON</th>
+            <th class="sig-mono">TASK</th>
+            <th class="sig-mono">STATUS</th>
+            <th class="sig-mono">DUE DATE</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sorted.map(r => {
+            const meta = BUCKET_META[r.bucket];
+            const overdueTag = (r.overdue && r.due) ? `<span style="margin-left:6px; font-size:10.5px; color:var(--rust);">${Math.abs(daysBetween(r.due, startOfToday()))}d late</span>` : "";
+            return `<tr>
+              <td>${escapeHtml(r.person)}</td>
+              <td>${escapeHtml(r.task)}</td>
+              <td><span class="pill" style="background:${meta.soft}; color:${meta.color};">${escapeHtml(r.rawStatus)}</span></td>
+              <td class="sig-mono" style="color:${r.overdue ? 'var(--rust)' : 'var(--ink)'};">${fmtDate(r.due)}${overdueTag}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+  document.getElementById("modalOverlay").classList.add("open");
+}
+
+function closeUrgencyModal() {
+  document.getElementById("modalOverlay").classList.remove("open");
 }
 
 function renderError(message) {
@@ -420,6 +558,14 @@ async function loadFromSheet(url) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("modalCloseBtn").addEventListener("click", closeUrgencyModal);
+  document.getElementById("modalOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "modalOverlay") closeUrgencyModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeUrgencyModal();
+  });
+
   if (!SHEET_URL || SHEET_URL === "PASTE_YOUR_GOOGLE_SHEET_LINK_HERE") {
     renderConfigNeeded();
     return;
