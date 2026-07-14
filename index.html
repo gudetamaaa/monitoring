@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task Monitoring Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --ink: #1C1B1A;
+    --paper: #FAFAF7;
+    --muted: #83807A;
+    --line: #E4E1D8;
+    --accent: #2F6F62;
+    --accent-soft: #DCE9E5;
+    --amber: #C08A2E;
+    --amber-soft: #F3E6CD;
+    --rust: #9A4630;
+    --rust-soft: #F1DCD4;
+    --gray: #A9A69F;
+    --gray-soft: #ECEAE4;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(--paper); color: var(--ink); }
+  .sig-mono { font-family: 'IBM Plex Mono', monospace; }
+  .sig-display { font-family: 'Space Grotesk', sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 36px 24px 64px; }
+  .header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+  .eyebrow { display: flex; align-items: baseline; gap: 8px; font-size: 12px; letter-spacing: 0.12em; }
+  .card { border: 1px solid var(--line); border-radius: 6px; background: #fff; padding: 28px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-bottom: 26px; }
+  .kpi-cell { background: #fff; padding: 16px; }
+  .kpi-value { font-size: 28px; font-weight: 700; line-height: 1; }
+  .kpi-label { font-size: 10px; color: var(--muted); margin-top: 6px; letter-spacing: 0.06em; }
+  .section-label { font-size: 10.5px; color: var(--muted); margin-bottom: 8px; letter-spacing: 0.05em; }
+  .status-bar { display: flex; width: 100%; height: 14px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .urgency-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 26px; }
+  .urgency-cell { border: 1px solid var(--line); border-radius: 3px; padding: 10px 12px; }
+  .urgency-value { font-size: 22px; font-weight: 700; line-height: 1; }
+  .urgency-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .person-row { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
+  .person-name { color: var(--ink); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .person-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; background: var(--gray-soft); }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 12px; font-family: 'Inter', sans-serif; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10.5px; letter-spacing: 0.05em; cursor: pointer; background: var(--paper); position: sticky; top: 0; }
+  th:hover { color: var(--ink); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  tr:hover td { background: #F5F4EF; }
+  .table-scroll { max-height: 360px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+  .pill { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 2px 7px; border-radius: 10px; }
+  .config-note { border: 1px dashed var(--line); border-radius: 4px; padding: 20px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .config-note code { background: #F1EFEA; padding: 2px 6px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .empty-state { min-height: 300px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }
+  .footer-note { font-size: 9.5px; color: var(--muted); margin-top: 18px; text-align: right; letter-spacing: 0.06em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="eyebrow">
+      <span class="sig-mono" style="color: var(--muted);">SHEET</span>
+      <span class="sig-mono" style="color: var(--accent);">&rarr; MONITOR</span>
+    </div>
+    <h1 class="sig-display" style="margin:0; font-size:20px; font-weight:600;">Task Monitoring Dashboard</h1>
+  </div>
+  <div id="app"></div>
+</div>
+
+<script>
+/* =====================================================================
+   1. PASTE YOUR GOOGLE SHEET LINK HERE
+      - Open your sheet, click Share -> General access ->
+        "Anyone with the link" -> Viewer
+      - Copy the URL from your browser's address bar and paste it below,
+        replacing the placeholder text between the quotes.
+      - Leave the sheet's columns as: Person in Charge, Task, Status, Due Date
+        (or edit the FIELD MATCHING section further down if your headers differ)
+   ===================================================================== */
+const SHEET_URL = "PASTE_YOUR_GOOGLE_SHEET_LINK_HERE";
+
+/* Optional: change the dashboard title shown at the top of the card */
+const DASHBOARD_TITLE = "Team Task Monitor";
+/* ===================================================================== */
+
+const BUCKET_META = {
+  done:         { label: "Done",         color: "var(--accent)", soft: "var(--accent-soft)" },
+  in_progress:  { label: "In Progress",  color: "var(--amber)",  soft: "var(--amber-soft)" },
+  blocked:      { label: "Blocked",      color: "var(--rust)",   soft: "var(--rust-soft)" },
+  not_started:  { label: "Not Started",  color: "var(--gray)",   soft: "var(--gray-soft)" },
+  other:        { label: "Other",        color: "var(--muted)",  soft: "#EDEBE6" },
+};
+const BUCKET_ORDER = ["done", "in_progress", "blocked", "not_started", "other"];
+
+let boardData = null;
+let sortConfig = { key: "due", dir: "asc" };
+let searchText = "";
+let statusFilter = "all";
+
+function parseSheetUrl(url) {
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch) return null;
+  const id = idMatch[1];
+  const gidMatch = url.match(/[?#&]gid=(\d+)/);
+  const gid = gidMatch ? gidMatch[1] : "0";
+  return { id, gid };
+}
+function buildExportUrl(info) {
+  return `https://docs.google.com/spreadsheets/d/${info.id}/export?format=csv&gid=${info.gid}`;
+}
+function guessField(fields, patterns) {
+  for (const p of patterns) {
+    const hit = fields.find(f => p.test(f));
+    if (hit) return hit;
+  }
+  return fields[0];
+}
+function statusBucket(raw) {
+  const s = (raw || "").toLowerCase().trim();
+  if (/done|complete|finished|closed/.test(s)) return "done";
+  if (/progress|ongoing|doing|active/.test(s)) return "in_progress";
+  if (/block|stuck|hold|delay/.test(s)) return "blocked";
+  if (/not started|todo|to do|pending|backlog|new/.test(s)) return "not_started";
+  return "other";
+}
+function parseDate(raw) {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  return d;
+}
+function fmtDate(d) {
+  if (!d) return "—";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function daysBetween(a, b) {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function buildBoard(fields, rows) {
+  /* ===================================================================
+     FIELD MATCHING — edit these regex patterns if your column headers
+     don't match automatically (rare; auto-matching handles most cases)
+     =================================================================== */
+  const fieldMap = {
+    person: guessField(fields, [/person.*charge/i, /assignee/i, /owner/i, /in charge/i]),
+    task:   guessField(fields, [/task/i, /activity/i, /item/i]),
+    status: guessField(fields, [/status/i]),
+    due:    guessField(fields, [/due/i, /deadline/i]),
+  };
+
+  const today = startOfToday();
+  const weekOut = new Date(today);
+  weekOut.setDate(weekOut.getDate() + 7);
+
+  const taskRows = rows
+    .filter(r => r[fieldMap.task])
+    .map((r, i) => {
+      const person = (r[fieldMap.person] || "Unassigned").toString().trim() || "Unassigned";
+      const task = (r[fieldMap.task] || "").toString().trim();
+      const rawStatus = (r[fieldMap.status] || "").toString().trim();
+      const bucket = statusBucket(rawStatus);
+      const due = parseDate(r[fieldMap.due]);
+      const isDone = bucket === "done";
+      const overdue = !isDone && due && due < today;
+      const dueThisWeek = !isDone && due && due >= today && due <= weekOut;
+      const dueLater = !isDone && due && due > weekOut;
+      return { id: i, person, task, rawStatus: rawStatus || "—", bucket, due, overdue, dueThisWeek, dueLater };
+    });
+
+  const total = taskRows.length;
+  const doneCount = taskRows.filter(r => r.bucket === "done").length;
+  const overdueCount = taskRows.filter(r => r.overdue).length;
+  const dueThisWeekCount = taskRows.filter(r => r.dueThisWeek).length;
+  const percentComplete = total ? Math.round((doneCount / total) * 100) : 0;
+
+  const statusCounts = BUCKET_ORDER
+    .map(b => ({ bucket: b, count: taskRows.filter(r => r.bucket === b).length }))
+    .filter(s => s.count > 0);
+
+  const byPerson = {};
+  taskRows.forEach(r => {
+    if (!byPerson[r.person]) {
+      byPerson[r.person] = { person: r.person, done:0, in_progress:0, blocked:0, not_started:0, other:0, overdueCount:0, total:0 };
+    }
+    byPerson[r.person][r.bucket] += 1;
+    byPerson[r.person].total += 1;
+    if (r.overdue) byPerson[r.person].overdueCount += 1;
+  });
+  const personStats = Object.values(byPerson).sort((a,b) => b.overdueCount - a.overdueCount || b.total - a.total);
+
+  const urgency = [
+    { key: "overdue", label: "Overdue", count: overdueCount, color: "var(--rust)" },
+    { key: "this_week", label: "Due this week", count: dueThisWeekCount, color: "var(--amber)" },
+    { key: "later", label: "Due later", count: taskRows.filter(r => r.dueLater).length, color: "var(--gray)" },
+  ];
+
+  return { rows: taskRows, total, doneCount, overdueCount, dueThisWeekCount, percentComplete, statusCounts, personStats, urgency };
+}
+
+function getFilteredSortedRows() {
+  if (!boardData) return [];
+  let rows = boardData.rows;
+  if (statusFilter !== "all") rows = rows.filter(r => r.bucket === statusFilter);
+  if (searchText.trim()) {
+    const q = searchText.toLowerCase();
+    rows = rows.filter(r => r.task.toLowerCase().includes(q) || r.person.toLowerCase().includes(q));
+  }
+  const { key, dir } = sortConfig;
+  const sign = dir === "asc" ? 1 : -1;
+  rows = [...rows].sort((a, b) => {
+    if (key === "due") {
+      const av = a.due ? a.due.getTime() : Infinity;
+      const bv = b.due ? b.due.getTime() : Infinity;
+      return (av - bv) * sign;
+    }
+    if (key === "status") return a.bucket.localeCompare(b.bucket) * sign;
+    return String(a[key]).localeCompare(String(b[key])) * sign;
+  });
+  return rows;
+}
+
+function renderTableBody() {
+  const rows = getFilteredSortedRows();
+  const tbody = document.getElementById("tbody");
+  if (!tbody) return;
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:20px; text-align:center; color:var(--muted);">No tasks match this filter.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const meta = BUCKET_META[r.bucket];
+    const overdueTag = (r.overdue && r.due) ? `<span style="margin-left:6px; font-size:10.5px; color:var(--rust);">${Math.abs(daysBetween(r.due, startOfToday()))}d late</span>` : "";
+    return `<tr style="border-left:3px solid ${r.overdue ? 'var(--rust)' : 'transparent'}; background:${r.overdue ? '#FBF3F1' : 'transparent'};">
+      <td>${escapeHtml(r.person)}</td>
+      <td>${escapeHtml(r.task)}</td>
+      <td><span class="pill" style="background:${meta.soft}; color:${meta.color};">${escapeHtml(r.rawStatus)}</span></td>
+      <td class="sig-mono" style="color:${r.overdue ? 'var(--rust)' : 'var(--ink)'}; font-weight:${r.overdue ? 600 : 400};">${fmtDate(r.due)}${overdueTag}</td>
+    </tr>`;
+  }).join("");
+}
+
+function sortArrow(key) {
+  if (sortConfig.key !== key) return "";
+  return sortConfig.dir === "asc" ? " &uarr;" : " &darr;";
+}
+
+function renderDashboard() {
+  const app = document.getElementById("app");
+  if (!boardData) {
+    app.innerHTML = `<div class="card"><div class="empty-state">Loading task data…</div></div>`;
+    return;
+  }
+  const b = boardData;
+  const maxPersonTotal = Math.max(1, ...b.personStats.map(p => p.total));
+
+  const statusBarHtml = b.statusCounts.map(s =>
+    `<div style="width:${(s.count / b.total) * 100}%; background:${BUCKET_META[s.bucket].color};" title="${BUCKET_META[s.bucket].label}: ${s.count}"></div>`
+  ).join("");
+
+  const legendHtml = b.statusCounts.map(s =>
+    `<div class="legend-item"><span class="dot" style="background:${BUCKET_META[s.bucket].color};"></span>${BUCKET_META[s.bucket].label} <span class="sig-mono" style="color:var(--ink);">${s.count}</span></div>`
+  ).join("");
+
+  const urgencyHtml = b.urgency.map(u =>
+    `<div class="urgency-cell" style="border-left:3px solid ${u.color};">
+      <div class="urgency-value sig-display" style="color:${u.color};">${u.count}</div>
+      <div class="urgency-label sig-mono">${u.label.toUpperCase()}</div>
+    </div>`
+  ).join("");
+
+  const personHtml = b.personStats.map(p => {
+    const widthPct = (p.total / maxPersonTotal) * 100;
+    const segs = BUCKET_ORDER.filter(k => p[k] > 0).map(k =>
+      `<div style="flex:${p[k]}; background:${BUCKET_META[k].color};"></div>`
+    ).join("");
+    return `<div class="person-row">
+      <div class="person-name">${escapeHtml(p.person)}</div>
+      <div class="person-bar" style="width:${widthPct}%;">${segs}</div>
+    </div>`;
+  }).join("");
+
+  app.innerHTML = `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px;">
+        <h2 class="sig-display" style="margin:0; font-size:24px; font-weight:700;">${escapeHtml(DASHBOARD_TITLE)}</h2>
+        <span class="sig-mono" style="font-size:10.5px; color:var(--muted); text-align:right;">${b.total} TASKS &middot; ${b.personStats.length} PEOPLE</span>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-cell"><div class="kpi-value sig-display">${b.total}</div><div class="kpi-label sig-mono">TOTAL TASKS</div></div>
+        <div class="kpi-cell"><div class="kpi-value sig-display" style="color:var(--accent);">${b.percentComplete}%</div><div class="kpi-label sig-mono">% COMPLETE</div></div>
+        <div class="kpi-cell"><div class="kpi-value sig-display" style="color:var(--rust);">${b.overdueCount}</div><div class="kpi-label sig-mono">OVERDUE</div></div>
+        <div class="kpi-cell"><div class="kpi-value sig-display" style="color:var(--amber);">${b.dueThisWeekCount}</div><div class="kpi-label sig-mono">DUE THIS WEEK</div></div>
+      </div>
+
+      <div style="margin-bottom:26px;">
+        <div class="section-label sig-mono">STATUS BREAKDOWN</div>
+        <div class="status-bar">${statusBarHtml}</div>
+        <div class="legend">${legendHtml}</div>
+      </div>
+
+      <div class="urgency-row">${urgencyHtml}</div>
+
+      <div style="margin-bottom:26px;">
+        <div class="section-label sig-mono">WORKLOAD BY PERSON &middot; sorted by overdue</div>
+        ${personHtml}
+      </div>
+
+      <div>
+        <div class="toolbar">
+          <div class="section-label sig-mono" style="margin-right:auto; margin-bottom:0;">ALL TASKS</div>
+          <input id="searchInput" type="text" placeholder="Search task or person…" style="width:190px;" />
+          <select id="statusSelect">
+            <option value="all">All statuses</option>
+            ${BUCKET_ORDER.map(k => `<option value="${k}">${BUCKET_META[k].label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th data-key="person" class="sig-mono">PERSON${sortArrow("person")}</th>
+                <th data-key="task" class="sig-mono">TASK${sortArrow("task")}</th>
+                <th data-key="status" class="sig-mono">STATUS${sortArrow("status")}</th>
+                <th data-key="due" class="sig-mono">DUE DATE${sortArrow("due")}</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="footer-note sig-mono">GENERATED FROM ${b.total} ROWS OF SHEET DATA</div>
+    </div>
+  `;
+
+  renderTableBody();
+
+  document.querySelectorAll("th[data-key]").forEach(th => {
+    th.addEventListener("click", () => {
+      const key = th.getAttribute("data-key");
+      sortConfig = sortConfig.key === key ? { key, dir: sortConfig.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" };
+      renderDashboard();
+    });
+  });
+  document.getElementById("searchInput").addEventListener("input", (e) => {
+    searchText = e.target.value;
+    renderTableBody();
+  });
+  document.getElementById("statusSelect").addEventListener("change", (e) => {
+    statusFilter = e.target.value;
+    renderTableBody();
+  });
+}
+
+function renderError(message) {
+  document.getElementById("app").innerHTML = `
+    <div class="card">
+      <div class="config-note">
+        <strong style="color:var(--ink);">Couldn't load the dashboard.</strong><br/><br/>
+        ${message}
+      </div>
+    </div>
+  `;
+}
+
+function renderConfigNeeded() {
+  document.getElementById("app").innerHTML = `
+    <div class="card">
+      <div class="config-note">
+        <strong style="color:var(--ink);">This page isn't linked to a sheet yet.</strong><br/><br/>
+        Open this file's source code and find the line near the top of the
+        <code>&lt;script&gt;</code> tag that says:<br/><br/>
+        <code>const SHEET_URL = "PASTE_YOUR_GOOGLE_SHEET_LINK_HERE";</code><br/><br/>
+        Replace the placeholder text with your actual Google Sheet URL
+        (with sharing set to "Anyone with the link &rarr; Viewer"), save,
+        and re-open this page.
+      </div>
+    </div>
+  `;
+}
+
+async function loadFromSheet(url) {
+  const info = parseSheetUrl(url);
+  if (!info) {
+    renderError("That doesn't look like a valid Google Sheets link. Double check the SHEET_URL value in the code.");
+    return;
+  }
+  try {
+    const exportUrl = buildExportUrl(info);
+    const res = await fetch(exportUrl);
+    if (!res.ok) throw new Error("fetch-failed");
+    const text = await res.text();
+    if (text.trim().startsWith("<")) throw new Error("not-public");
+    const result = Papa.parse(text.trim(), { header: true, dynamicTyping: false, skipEmptyLines: true });
+    const fields = result.meta.fields || [];
+    if (fields.length < 2 || result.data.length === 0) {
+      renderError("The sheet loaded, but there wasn't enough data to build a dashboard. Check that it has headers and at least one task row.");
+      return;
+    }
+    boardData = buildBoard(fields, result.data);
+    renderDashboard();
+  } catch (err) {
+    renderError('Make sure the sheet\'s sharing is set to "Anyone with the link can view" (Share &rarr; General access), then refresh this page.');
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (!SHEET_URL || SHEET_URL === "PASTE_YOUR_GOOGLE_SHEET_LINK_HERE") {
+    renderConfigNeeded();
+    return;
+  }
+  loadFromSheet(SHEET_URL);
+});
+</script>
+</body>
+</html>
