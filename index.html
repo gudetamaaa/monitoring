@@ -94,6 +94,41 @@
   }
   .donut-center .num { font-size: 22px; font-weight: 700; line-height: 1; }
   .donut-center .cap { font-size: 9px; color: var(--muted); letter-spacing: 0.06em; margin-top: 2px; }
+
+  .table-scroll { overflow-x: auto; }
+  table { min-width: 480px; }
+
+  @media (max-width: 640px) {
+    html { -webkit-text-size-adjust: 100%; }
+    .wrap { padding: 20px 14px 40px; }
+    .header { padding-bottom: 14px; margin-bottom: 22px; }
+    .header h1 { font-size: 16px !important; }
+    .card { padding: 18px 16px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .kpi-value { font-size: 22px; }
+    .urgency-row { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .urgency-cell { padding: 8px; }
+    .urgency-value { font-size: 18px; padding: 4px 0; }
+    .urgency-label { font-size: 9px; }
+    .status-viz-row { gap: 18px; }
+    .donut-wrap svg { width: 116px; height: 116px; }
+    .donut-center .num { font-size: 17px; }
+    .person-row { grid-template-columns: 78px 1fr; gap: 6px; font-size: 11px; }
+    .toolbar { gap: 8px; }
+    .toolbar input { flex: 1 1 auto; min-width: 0; width: auto; }
+    .toolbar select { flex: 0 0 auto; }
+    .modal-box { max-width: 94vw; max-height: 85vh; }
+    .modal-header { padding: 14px 16px; }
+    .modal-title { font-size: 15px; }
+    th, td { padding: 7px 8px; font-size: 12px; }
+  }
+
+  @media (max-width: 380px) {
+    .urgency-row { grid-template-columns: 1fr; gap: 8px; }
+    .urgency-cell { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
+    .urgency-value { font-size: 20px; }
+    .urgency-label { font-size: 10px; margin-top: 0; }
+  }
 </style>
 </head>
 <body>
