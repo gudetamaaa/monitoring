@@ -45,7 +45,11 @@
   .urgency-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
   .person-row { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
   .person-name { color: var(--ink); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .person-name.clickable { cursor: pointer; }
+  .person-name.clickable:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
   .person-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; background: var(--gray-soft); }
+  .bar-seg { cursor: pointer; transition: filter 0.12s ease; }
+  .bar-seg:hover { filter: brightness(1.15); }
   .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
   .toolbar input, .toolbar select { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 12px; font-family: 'Inter', sans-serif; }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -413,10 +417,12 @@ function renderDashboard() {
   const personHtml = b.personStats.map(p => {
     const widthPct = (p.total / maxPersonTotal) * 100;
     const segs = BUCKET_ORDER.filter(k => p[k] > 0).map(k =>
-      `<div style="flex:${p[k]}; background:${BUCKET_META[k].color};"></div>`
+      `<div class="bar-seg" style="flex:${p[k]}; background:${BUCKET_META[k].color};"
+            title="${escapeHtml(p.person)} — ${BUCKET_META[k].label}: ${p[k]}"
+            data-person="${escapeHtml(p.person)}" data-bucket="${k}"></div>`
     ).join("");
     return `<div class="person-row">
-      <div class="person-name">${escapeHtml(p.person)}</div>
+      <div class="person-name clickable" data-person="${escapeHtml(p.person)}" title="${escapeHtml(p.person)} — ${p.total} task${p.total === 1 ? "" : "s"} total">${escapeHtml(p.person)}</div>
       <div class="person-bar" style="width:${widthPct}%;">${segs}</div>
     </div>`;
   }).join("");
@@ -505,8 +511,49 @@ function renderDashboard() {
   document.querySelectorAll("[data-urgency-key]").forEach(el => {
     el.addEventListener("click", () => openUrgencyModal(el.getAttribute("data-urgency-key")));
   });
+  document.querySelectorAll(".person-name[data-person]").forEach(el => {
+    el.addEventListener("click", () => openPersonModal(el.getAttribute("data-person"), null));
+  });
+  document.querySelectorAll(".bar-seg[data-person]").forEach(el => {
+    el.addEventListener("click", () => openPersonModal(el.getAttribute("data-person"), el.getAttribute("data-bucket")));
+  });
   const refreshBtn = document.getElementById("manualRefreshBtn");
   if (refreshBtn) refreshBtn.addEventListener("click", () => loadFromSheet(SHEET_URL, false));
+}
+
+function renderModalTaskTable(rows) {
+  if (rows.length === 0) {
+    return `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13px;">No tasks in this group.</div>`;
+  }
+  const sorted = [...rows].sort((a, b) => {
+    const av = a.due ? a.due.getTime() : Infinity;
+    const bv = b.due ? b.due.getTime() : Infinity;
+    return av - bv;
+  });
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th class="sig-mono">PERSON</th>
+          <th class="sig-mono">TASK</th>
+          <th class="sig-mono">STATUS</th>
+          <th class="sig-mono">DUE DATE</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map(r => {
+          const meta = BUCKET_META[r.bucket];
+          const overdueTag = (r.overdue && r.due) ? `<span style="margin-left:6px; font-size:10.5px; color:var(--rust);">${Math.abs(daysBetween(r.due, startOfToday()))}d late</span>` : "";
+          return `<tr>
+            <td>${escapeHtml(r.person)}</td>
+            <td>${escapeHtml(r.task)}</td>
+            <td><span class="pill" style="background:${meta.soft}; color:${meta.color};">${escapeHtml(r.rawStatus)}</span></td>
+            <td class="sig-mono" style="color:${r.overdue ? 'var(--rust)' : 'var(--ink)'};">${fmtDate(r.due)}${overdueTag}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 function openUrgencyModal(key) {
@@ -514,40 +561,20 @@ function openUrgencyModal(key) {
   const bucket = boardData.urgency.find(u => u.key === key);
   if (!bucket) return;
   document.getElementById("modalTitle").textContent = `${bucket.label} (${bucket.count})`;
-  const body = document.getElementById("modalBody");
-  if (bucket.rows.length === 0) {
-    body.innerHTML = `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13px;">No tasks in this group.</div>`;
-  } else {
-    const sorted = [...bucket.rows].sort((a, b) => {
-      const av = a.due ? a.due.getTime() : Infinity;
-      const bv = b.due ? b.due.getTime() : Infinity;
-      return av - bv;
-    });
-    body.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th class="sig-mono">PERSON</th>
-            <th class="sig-mono">TASK</th>
-            <th class="sig-mono">STATUS</th>
-            <th class="sig-mono">DUE DATE</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${sorted.map(r => {
-            const meta = BUCKET_META[r.bucket];
-            const overdueTag = (r.overdue && r.due) ? `<span style="margin-left:6px; font-size:10.5px; color:var(--rust);">${Math.abs(daysBetween(r.due, startOfToday()))}d late</span>` : "";
-            return `<tr>
-              <td>${escapeHtml(r.person)}</td>
-              <td>${escapeHtml(r.task)}</td>
-              <td><span class="pill" style="background:${meta.soft}; color:${meta.color};">${escapeHtml(r.rawStatus)}</span></td>
-              <td class="sig-mono" style="color:${r.overdue ? 'var(--rust)' : 'var(--ink)'};">${fmtDate(r.due)}${overdueTag}</td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    `;
+  document.getElementById("modalBody").innerHTML = renderModalTaskTable(bucket.rows);
+  document.getElementById("modalOverlay").classList.add("open");
+}
+
+function openPersonModal(person, bucketKey) {
+  if (!boardData) return;
+  let rows = boardData.rows.filter(r => r.person === person);
+  let title = `${person} (${rows.length})`;
+  if (bucketKey) {
+    rows = rows.filter(r => r.bucket === bucketKey);
+    title = `${person} — ${BUCKET_META[bucketKey].label} (${rows.length})`;
   }
+  document.getElementById("modalTitle").textContent = title;
+  document.getElementById("modalBody").innerHTML = renderModalTaskTable(rows);
   document.getElementById("modalOverlay").classList.add("open");
 }
 
