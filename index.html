@@ -171,7 +171,7 @@ const DASHBOARD_TITLE = "Team Task Monitor";
 /* How often to auto-check the sheet for changes, in seconds.
    30-60 is reasonable for a live monitor; lower it if you want faster
    updates, but avoid going under 15 to keep requests to Google reasonable. */
-const AUTO_REFRESH_SECONDS = 5;
+const AUTO_REFRESH_SECONDS = 10;
 /* ===================================================================== */
 
 let lastSyncedAt = null;
@@ -199,7 +199,9 @@ function parseSheetUrl(url) {
   return { id, gid };
 }
 function buildExportUrl(info) {
-  return `https://docs.google.com/spreadsheets/d/${info.id}/export?format=csv&gid=${info.gid}`;
+  // The timestamp param forces a fresh response instead of a cached one
+  // from Google's edge — without it, edits can take minutes to show up.
+  return `https://docs.google.com/spreadsheets/d/${info.id}/export?format=csv&gid=${info.gid}&t=${Date.now()}`;
 }
 function guessField(fields, patterns) {
   for (const p of patterns) {
