@@ -13,14 +13,14 @@
     --paper: #FAFAF7;
     --muted: #83807A;
     --line: #E4E1D8;
-    --accent: #2F6F62;
-    --accent-soft: #DCE9E5;
-    --amber: #C08A2E;
-    --amber-soft: #F3E6CD;
-    --rust: #9A4630;
-    --rust-soft: #F1DCD4;
-    --gray: #A9A69F;
-    --gray-soft: #ECEAE4;
+    --accent: #0FA968;
+    --accent-soft: #D3F5E4;
+    --amber: #F5981D;
+    --amber-soft: #FEEBC8;
+    --rust: #EF4444;
+    --rust-soft: #FDE0DE;
+    --gray: #6B7280;
+    --gray-soft: #E5E7EB;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(--paper); color: var(--ink); }
@@ -101,6 +101,7 @@
 
   .table-scroll { overflow-x: auto; }
   table { min-width: 480px; }
+  #openSheetBtn:hover { background: var(--gray-soft); color: var(--ink); }
 
   @media (max-width: 640px) {
     html { -webkit-text-size-adjust: 100%; }
@@ -142,7 +143,12 @@
       <span class="sig-mono" style="color: var(--muted);">SHEET</span>
       <span class="sig-mono" style="color: var(--accent);">&rarr; MONITOR</span>
     </div>
-    <h1 class="sig-display" style="margin:0; font-size:20px; font-weight:600;">Task Monitoring Dashboard</h1>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+      <h1 class="sig-display" style="margin:0; font-size:20px; font-weight:600;">Task Monitoring Dashboard</h1>
+      <a id="openSheetBtn" href="#" target="_blank" rel="noopener noreferrer" style="display:none; align-items:center; gap:6px; font-size:11.5px; font-family:'Inter',sans-serif; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:5px 10px; text-decoration:none; background:#fff;">
+        Open Google Sheet &#8599;
+      </a>
+    </div>
   </div>
   <div id="app"></div>
 </div>
@@ -674,6 +680,11 @@ window.addEventListener("DOMContentLoaded", () => {
     renderConfigNeeded();
     return;
   }
+
+  const openSheetBtn = document.getElementById("openSheetBtn");
+  openSheetBtn.href = SHEET_URL;
+  openSheetBtn.style.display = "inline-flex";
+
   loadFromSheet(SHEET_URL, false).then(startAutoRefresh);
 });
 </script>
