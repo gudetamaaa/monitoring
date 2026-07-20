@@ -88,7 +88,7 @@
     color: var(--muted); padding: 4px 8px; border-radius: 4px;
   }
   .modal-close:hover { background: var(--gray-soft); color: var(--ink); }
-  .modal-body { overflow-y: auto; padding: 0; }
+  .modal-body { overflow-y: auto; overflow-x: auto; padding: 0; }
 
   .status-viz-row { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
   .donut-wrap { position: relative; flex-shrink: 0; }
@@ -100,7 +100,7 @@
   .donut-center .cap { font-size: 9px; color: var(--muted); letter-spacing: 0.06em; margin-top: 2px; }
 
   .table-scroll { overflow-x: auto; }
-  table { min-width: 480px; }
+  table { min-width: 560px; }
   #openSheetBtn:hover { background: var(--gray-soft); color: var(--ink); }
 
   @media (max-width: 640px) {
@@ -257,6 +257,7 @@ function buildBoard(fields, rows) {
   const fieldMap = {
     person: guessField(fields, [/person.*charge/i, /assignee/i, /owner/i, /in charge/i]),
     task:   guessField(fields, [/task/i, /activity/i, /item/i]),
+    started: guessField(fields, [/date started/i, /start date/i, /started/i]),
     status: guessField(fields, [/status/i]),
     due:    guessField(fields, [/due/i, /deadline/i]),
   };
@@ -273,13 +274,14 @@ function buildBoard(fields, rows) {
       const rawStatus = (r[fieldMap.status] || "").toString().trim();
       const bucket = statusBucket(rawStatus);
       const due = parseDate(r[fieldMap.due]);
+      const dateStarted = parseDate(r[fieldMap.started]);
       const isDone = bucket === "done";
       const isCanceled = bucket === "canceled";
       const excludeFromUrgency = isDone || isCanceled;
       const overdue = !excludeFromUrgency && due && due < today;
       const dueThisWeek = !excludeFromUrgency && due && due >= today && due <= weekOut;
       const dueLater = !excludeFromUrgency && due && due > weekOut;
-      return { id: i, person, task, rawStatus: rawStatus || "—", bucket, due, overdue, dueThisWeek, dueLater };
+      return { id: i, person, task, rawStatus: rawStatus || "—", bucket, due, dateStarted, overdue, dueThisWeek, dueLater };
     });
 
   const total = taskRows.length;
@@ -327,9 +329,10 @@ function getFilteredSortedRows() {
   const { key, dir } = sortConfig;
   const sign = dir === "asc" ? 1 : -1;
   rows = [...rows].sort((a, b) => {
-    if (key === "due") {
-      const av = a.due ? a.due.getTime() : Infinity;
-      const bv = b.due ? b.due.getTime() : Infinity;
+    if (key === "due" || key === "started") {
+      const field = key === "due" ? "due" : "dateStarted";
+      const av = a[field] ? a[field].getTime() : Infinity;
+      const bv = b[field] ? b[field].getTime() : Infinity;
       return (av - bv) * sign;
     }
     if (key === "status") return a.bucket.localeCompare(b.bucket) * sign;
@@ -343,7 +346,7 @@ function renderTableBody() {
   const tbody = document.getElementById("tbody");
   if (!tbody) return;
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="padding:20px; text-align:center; color:var(--muted);">No tasks match this filter.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="padding:20px; text-align:center; color:var(--muted);">No tasks match this filter.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(r => {
@@ -352,6 +355,7 @@ function renderTableBody() {
     return `<tr style="border-left:3px solid ${r.overdue ? 'var(--rust)' : 'transparent'}; background:${r.overdue ? '#FBF3F1' : 'transparent'};">
       <td>${escapeHtml(r.person)}</td>
       <td>${escapeHtml(r.task)}</td>
+      <td class="sig-mono" style="color:var(--muted);">${fmtDate(r.dateStarted)}</td>
       <td><span class="pill" style="background:${meta.soft}; color:${meta.color};">${escapeHtml(r.rawStatus)}</span></td>
       <td class="sig-mono" style="color:${r.overdue ? 'var(--rust)' : 'var(--ink)'}; font-weight:${r.overdue ? 600 : 400};">${fmtDate(r.due)}${overdueTag}</td>
     </tr>`;
@@ -484,6 +488,7 @@ function renderDashboard() {
               <tr>
                 <th data-key="person" class="sig-mono">PERSON${sortArrow("person")}</th>
                 <th data-key="task" class="sig-mono">TASK${sortArrow("task")}</th>
+                <th data-key="started" class="sig-mono">STARTED${sortArrow("started")}</th>
                 <th data-key="status" class="sig-mono">STATUS${sortArrow("status")}</th>
                 <th data-key="due" class="sig-mono">DUE DATE${sortArrow("due")}</th>
               </tr>
@@ -542,6 +547,7 @@ function renderModalTaskTable(rows) {
         <tr>
           <th class="sig-mono">PERSON</th>
           <th class="sig-mono">TASK</th>
+          <th class="sig-mono">STARTED</th>
           <th class="sig-mono">STATUS</th>
           <th class="sig-mono">DUE DATE</th>
         </tr>
@@ -553,6 +559,7 @@ function renderModalTaskTable(rows) {
           return `<tr>
             <td>${escapeHtml(r.person)}</td>
             <td>${escapeHtml(r.task)}</td>
+            <td class="sig-mono" style="color:var(--muted);">${fmtDate(r.dateStarted)}</td>
             <td><span class="pill" style="background:${meta.soft}; color:${meta.color};">${escapeHtml(r.rawStatus)}</span></td>
             <td class="sig-mono" style="color:${r.overdue ? 'var(--rust)' : 'var(--ink)'};">${fmtDate(r.due)}${overdueTag}</td>
           </tr>`;
