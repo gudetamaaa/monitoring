@@ -167,7 +167,14 @@ const SHEET_URL = "https://docs.google.com/spreadsheets/d/17Sp21jw17h6DI-r7B3QXl
 
 /* Optional: change the dashboard title shown at the top of the card */
 const DASHBOARD_TITLE = "Team Task Monitor";
+
+/* How often to auto-check the sheet for changes, in seconds.
+   30-60 is reasonable for a live monitor; lower it if you want faster
+   updates, but avoid going under 15 to keep requests to Google reasonable. */
+const AUTO_REFRESH_SECONDS = 30;
 /* ===================================================================== */
+
+let lastSyncedAt = null;
 
 const BUCKET_META = {
   done:         { label: "Done",         color: "var(--accent)", soft: "var(--accent-soft)" },
@@ -416,7 +423,11 @@ function renderDashboard() {
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px;">
         <h2 class="sig-display" style="margin:0; font-size:24px; font-weight:700;">${escapeHtml(DASHBOARD_TITLE)}</h2>
-        <span class="sig-mono" style="font-size:10.5px; color:var(--muted); text-align:right;">${b.total} TASKS &middot; ${b.personStats.length} PEOPLE</span>
+        <span class="sig-mono" style="font-size:10.5px; color:var(--muted); text-align:right; display:flex; align-items:center; gap:10px;">
+          ${b.total} TASKS &middot; ${b.personStats.length} PEOPLE
+          <span id="syncStatus">${lastSyncedAt ? "&middot; SYNCED " + lastSyncedAt.toLocaleTimeString() : ""}</span>
+          <button id="manualRefreshBtn" title="Refresh now" style="border:1px solid var(--line); background:#fff; border-radius:3px; padding:2px 7px; cursor:pointer; font-family:inherit; font-size:10px; color:var(--muted);">&#8635;</button>
+        </span>
       </div>
 
       <div class="kpi-row">
@@ -447,10 +458,10 @@ function renderDashboard() {
       <div>
         <div class="toolbar">
           <div class="section-label sig-mono" style="margin-right:auto; margin-bottom:0;">ALL TASKS</div>
-          <input id="searchInput" type="text" placeholder="Search task or person…" style="width:190px;" />
+          <input id="searchInput" type="text" placeholder="Search task or person…" style="width:190px;" value="${escapeHtml(searchText)}" />
           <select id="statusSelect">
-            <option value="all">All statuses</option>
-            ${BUCKET_ORDER.map(k => `<option value="${k}">${BUCKET_META[k].label}</option>`).join("")}
+            <option value="all"${statusFilter === "all" ? " selected" : ""}>All statuses</option>
+            ${BUCKET_ORDER.map(k => `<option value="${k}"${statusFilter === k ? " selected" : ""}>${BUCKET_META[k].label}</option>`).join("")}
           </select>
         </div>
         <div class="table-scroll">
@@ -492,6 +503,8 @@ function renderDashboard() {
   document.querySelectorAll("[data-urgency-key]").forEach(el => {
     el.addEventListener("click", () => openUrgencyModal(el.getAttribute("data-urgency-key")));
   });
+  const refreshBtn = document.getElementById("manualRefreshBtn");
+  if (refreshBtn) refreshBtn.addEventListener("click", () => loadFromSheet(SHEET_URL, false));
 }
 
 function openUrgencyModal(key) {
@@ -567,29 +580,56 @@ function renderConfigNeeded() {
   `;
 }
 
-async function loadFromSheet(url) {
+let lastRawCsv = "";
+
+async function loadFromSheet(url, silent) {
   const info = parseSheetUrl(url);
   if (!info) {
-    renderError("That doesn't look like a valid Google Sheets link. Double check the SHEET_URL value in the code.");
+    if (!silent) renderError("That doesn't look like a valid Google Sheets link. Double check the SHEET_URL value in the code.");
     return;
   }
   try {
     const exportUrl = buildExportUrl(info);
-    const res = await fetch(exportUrl);
+    const res = await fetch(exportUrl, { cache: "no-store" });
     if (!res.ok) throw new Error("fetch-failed");
     const text = await res.text();
     if (text.trim().startsWith("<")) throw new Error("not-public");
+
+    // Skip re-render if nothing actually changed since last check
+    if (silent && text === lastRawCsv) {
+      updateSyncIndicator();
+      return;
+    }
+    lastRawCsv = text;
+
     const result = Papa.parse(text.trim(), { header: true, dynamicTyping: false, skipEmptyLines: true });
     const fields = result.meta.fields || [];
     if (fields.length < 2 || result.data.length === 0) {
-      renderError("The sheet loaded, but there wasn't enough data to build a dashboard. Check that it has headers and at least one task row.");
+      if (!silent) renderError("The sheet loaded, but there wasn't enough data to build a dashboard. Check that it has headers and at least one task row.");
       return;
     }
     boardData = buildBoard(fields, result.data);
+    lastSyncedAt = new Date();
     renderDashboard();
   } catch (err) {
-    renderError('Make sure the sheet\'s sharing is set to "Anyone with the link can view" (Share &rarr; General access), then refresh this page.');
+    // On a silent background poll, don't wipe a working dashboard over a
+    // transient network hiccup — just skip this cycle and try again later.
+    if (!silent) {
+      renderError('Make sure the sheet\'s sharing is set to "Anyone with the link can view" (Share &rarr; General access), then refresh this page.');
+    }
   }
+}
+
+function updateSyncIndicator() {
+  const el = document.getElementById("syncStatus");
+  if (el && lastSyncedAt) el.textContent = `\u00b7 SYNCED ${lastSyncedAt.toLocaleTimeString()}`;
+}
+
+function startAutoRefresh() {
+  setInterval(() => {
+    if (document.hidden) return; // pause polling while tab isn't visible
+    loadFromSheet(SHEET_URL, true);
+  }, AUTO_REFRESH_SECONDS * 1000);
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -605,7 +645,7 @@ window.addEventListener("DOMContentLoaded", () => {
     renderConfigNeeded();
     return;
   }
-  loadFromSheet(SHEET_URL);
+  loadFromSheet(SHEET_URL, false).then(startAutoRefresh);
 });
 </script>
 </body>
