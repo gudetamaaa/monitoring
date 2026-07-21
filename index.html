@@ -199,6 +199,7 @@ let boardData = null;
 let sortConfig = { key: "due", dir: "asc" };
 let searchText = "";
 let statusFilter = "all";
+let personFilter = "all";
 
 function parseSheetUrl(url) {
   const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -273,15 +274,25 @@ function buildBoard(fields, rows) {
       const task = (r[fieldMap.task] || "").toString().trim();
       const rawStatus = (r[fieldMap.status] || "").toString().trim();
       const bucket = statusBucket(rawStatus);
-      const due = parseDate(r[fieldMap.due]);
-      const dateStarted = parseDate(r[fieldMap.started]);
+      const rawDueVal = r[fieldMap.due];
+      const rawStartedVal = r[fieldMap.started];
+      const due = parseDate(rawDueVal);
+      const dateStarted = parseDate(rawStartedVal);
       const isDone = bucket === "done";
       const isCanceled = bucket === "canceled";
       const excludeFromUrgency = isDone || isCanceled;
       const overdue = !excludeFromUrgency && due && due < today;
       const dueThisWeek = !excludeFromUrgency && due && due >= today && due <= weekOut;
       const dueLater = !excludeFromUrgency && due && due > weekOut;
-      return { id: i, person, task, rawStatus: rawStatus || "—", bucket, due, dateStarted, overdue, dueThisWeek, dueLater };
+
+      const issues = [];
+      if (rawStatus && bucket === "other") issues.push(`Unrecognized status "${rawStatus}"`);
+      if (rawDueVal !== undefined && rawDueVal !== null && String(rawDueVal).trim() !== "" && !due) issues.push("Due date couldn't be read");
+      if (rawStartedVal !== undefined && rawStartedVal !== null && String(rawStartedVal).trim() !== "" && !dateStarted) issues.push("Start date couldn't be read");
+      if (dateStarted && due && dateStarted > due) issues.push("Started after it was due");
+      if (bucket === "not_started" && dateStarted) issues.push('Marked "Not Started" but has a start date');
+
+      return { id: i, person, task, rawStatus: rawStatus || "—", bucket, due, dateStarted, overdue, dueThisWeek, dueLater, issues };
     });
 
   const total = taskRows.length;
@@ -315,13 +326,16 @@ function buildBoard(fields, rows) {
     { key: "later", label: "Due later", count: dueLaterRows.length, color: "var(--gray)", rows: dueLaterRows },
   ];
 
-  return { rows: taskRows, total, doneCount, overdueCount, dueThisWeekCount, percentComplete, statusCounts, personStats, urgency };
+  const dataIssues = taskRows.filter(r => r.issues.length > 0);
+
+  return { rows: taskRows, total, doneCount, overdueCount, dueThisWeekCount, percentComplete, statusCounts, personStats, urgency, dataIssues };
 }
 
 function getFilteredSortedRows() {
   if (!boardData) return [];
   let rows = boardData.rows;
   if (statusFilter !== "all") rows = rows.filter(r => r.bucket === statusFilter);
+  if (personFilter !== "all") rows = rows.filter(r => r.person === personFilter);
   if (searchText.trim()) {
     const q = searchText.toLowerCase();
     rows = rows.filter(r => r.task.toLowerCase().includes(q) || r.person.toLowerCase().includes(q));
@@ -448,6 +462,13 @@ function renderDashboard() {
         </span>
       </div>
 
+      ${b.dataIssues.length > 0 ? `
+        <div id="dataIssuesBanner" style="display:flex; align-items:center; gap:8px; background:var(--amber-soft); border:1px solid var(--amber); border-radius:4px; padding:9px 14px; margin-bottom:22px; cursor:pointer; font-size:12.5px;">
+          <span style="color:var(--amber); font-weight:700;">&#9888;</span>
+          <span>${b.dataIssues.length} row${b.dataIssues.length === 1 ? "" : "s"} in the sheet look off — click to review</span>
+        </div>
+      ` : ""}
+
       <div class="kpi-row">
         <div class="kpi-cell"><div class="kpi-value sig-display">${b.total}</div><div class="kpi-label sig-mono">TOTAL TASKS</div></div>
         <div class="kpi-cell"><div class="kpi-value sig-display" style="color:var(--accent);">${b.percentComplete}%</div><div class="kpi-label sig-mono">% COMPLETE</div></div>
@@ -477,6 +498,12 @@ function renderDashboard() {
         <div class="toolbar">
           <div class="section-label sig-mono" style="margin-right:auto; margin-bottom:0;">ALL TASKS</div>
           <input id="searchInput" type="text" placeholder="Search task or person…" style="width:190px;" value="${escapeHtml(searchText)}" />
+          <select id="personSelect">
+            <option value="all"${personFilter === "all" ? " selected" : ""}>All people</option>
+            ${[...b.personStats].sort((a, c) => a.person.localeCompare(c.person)).map(p =>
+              `<option value="${escapeHtml(p.person)}"${personFilter === p.person ? " selected" : ""}>${escapeHtml(p.person)}</option>`
+            ).join("")}
+          </select>
           <select id="statusSelect">
             <option value="all"${statusFilter === "all" ? " selected" : ""}>All statuses</option>
             ${BUCKET_ORDER.map(k => `<option value="${k}"${statusFilter === k ? " selected" : ""}>${BUCKET_META[k].label}</option>`).join("")}
@@ -519,6 +546,10 @@ function renderDashboard() {
     statusFilter = e.target.value;
     renderTableBody();
   });
+  document.getElementById("personSelect").addEventListener("change", (e) => {
+    personFilter = e.target.value;
+    renderTableBody();
+  });
   document.querySelectorAll("[data-urgency-key]").forEach(el => {
     el.addEventListener("click", () => openUrgencyModal(el.getAttribute("data-urgency-key")));
   });
@@ -530,6 +561,8 @@ function renderDashboard() {
   });
   const refreshBtn = document.getElementById("manualRefreshBtn");
   if (refreshBtn) refreshBtn.addEventListener("click", () => loadFromSheet(SHEET_URL, false));
+  const issuesBanner = document.getElementById("dataIssuesBanner");
+  if (issuesBanner) issuesBanner.addEventListener("click", openDataIssuesModal);
 }
 
 function renderModalTaskTable(rows) {
@@ -588,6 +621,36 @@ function openPersonModal(person, bucketKey) {
   }
   document.getElementById("modalTitle").textContent = title;
   document.getElementById("modalBody").innerHTML = renderModalTaskTable(rows);
+  document.getElementById("modalOverlay").classList.add("open");
+}
+
+function openDataIssuesModal() {
+  if (!boardData) return;
+  const rows = boardData.dataIssues;
+  document.getElementById("modalTitle").textContent = `Rows that look off (${rows.length})`;
+  const body = document.getElementById("modalBody");
+  if (rows.length === 0) {
+    body.innerHTML = `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13px;">Nothing flagged.</div>`;
+  } else {
+    body.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th class="sig-mono">PERSON</th>
+            <th class="sig-mono">TASK</th>
+            <th class="sig-mono">WHY IT'S FLAGGED</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `<tr>
+            <td>${escapeHtml(r.person)}</td>
+            <td>${escapeHtml(r.task)}</td>
+            <td style="color:var(--amber);">${r.issues.map(escapeHtml).join("<br/>")}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    `;
+  }
   document.getElementById("modalOverlay").classList.add("open");
 }
 
