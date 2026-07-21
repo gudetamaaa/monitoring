@@ -221,6 +221,16 @@ function guessField(fields, patterns) {
   }
   return fields[0];
 }
+function guessFieldOptional(fields, patterns) {
+  for (const p of patterns) {
+    const hit = fields.find(f => p.test(f));
+    if (hit) return hit;
+  }
+  return null;
+}
+function isArchived(raw) {
+  return raw !== undefined && raw !== null && String(raw).trim().toLowerCase() === "yes";
+}
 function statusBucket(raw) {
   const s = (raw || "").toLowerCase().trim();
   if (/done|complete|finished|closed/.test(s)) return "done";
@@ -261,6 +271,7 @@ function buildBoard(fields, rows) {
     started: guessField(fields, [/date started/i, /start date/i, /started/i]),
     status: guessField(fields, [/status/i]),
     due:    guessField(fields, [/due/i, /deadline/i]),
+    archive: guessFieldOptional(fields, [/archive/i]),
   };
 
   const today = startOfToday();
@@ -268,7 +279,7 @@ function buildBoard(fields, rows) {
   weekOut.setDate(weekOut.getDate() + 7);
 
   const taskRows = rows
-    .filter(r => r[fieldMap.task])
+    .filter(r => r[fieldMap.task] && !(fieldMap.archive && isArchived(r[fieldMap.archive])))
     .map((r, i) => {
       const person = (r[fieldMap.person] || "Unassigned").toString().trim() || "Unassigned";
       const task = (r[fieldMap.task] || "").toString().trim();
