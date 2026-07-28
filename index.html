@@ -52,10 +52,11 @@
   .bar-seg:hover { filter: brightness(1.15); }
   .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
   .toolbar input, .toolbar select { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 12px; font-family: 'Inter', sans-serif; }
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
   th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10.5px; letter-spacing: 0.05em; cursor: pointer; background: var(--paper); position: sticky; top: 0; }
   th:hover { color: var(--ink); }
-  td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: normal; word-break: break-word; overflow-wrap: break-word; vertical-align: top; }
+  th:nth-child(2), td:nth-child(2) { width: 40%; }
   tr:hover td { background: #F5F4EF; }
   .table-scroll { max-height: 360px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
   .pill { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 2px 7px; border-radius: 10px; }
@@ -100,7 +101,7 @@
   .donut-center .cap { font-size: 9px; color: var(--muted); letter-spacing: 0.06em; margin-top: 2px; }
 
   .table-scroll { overflow-x: auto; }
-  table { min-width: 560px; }
+  table { min-width: 480px; }
   #openSheetBtn:hover { background: var(--gray-soft); color: var(--ink); }
 
   @media (max-width: 640px) {
@@ -187,7 +188,7 @@ const AUTO_REFRESH_SECONDS = 15;
 let lastSyncedAt = null;
 
 const BUCKET_META = {
-  done:         { label: "Completed",         color: "var(--accent)", soft: "var(--accent-soft)" },
+  done:         { label: "Done",         color: "var(--accent)", soft: "var(--accent-soft)" },
   in_progress:  { label: "In Progress",  color: "var(--amber)",  soft: "var(--amber-soft)" },
   canceled:     { label: "Canceled",     color: "var(--rust)",   soft: "var(--rust-soft)" },
   not_started:  { label: "Not Started",  color: "var(--gray)",   soft: "var(--gray-soft)" },
